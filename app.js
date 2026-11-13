@@ -5,23 +5,90 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 
 // ==========================================
-// 1. PWA Service Worker 註冊與安裝事件處理
+// 0. Toast 狀態通知輔助函式
+// ==========================================
+let toastTimer = null;
+function showToast(message, type = 'info', duration = 3500) {
+  const toast = document.getElementById('status-toast');
+  const icon = document.getElementById('status-toast-icon');
+  const text = document.getElementById('status-toast-text');
+  if (!toast || !icon || !text) return;
+
+  if (toastTimer) clearTimeout(toastTimer);
+  text.textContent = message;
+
+  if (type === 'error') {
+    icon.textContent = '⚠️';
+    toast.className = 'absolute top-3 left-1/2 -translate-x-1/2 z-30 max-w-[92vw] sm:max-w-md px-3.5 py-2 rounded-lg bg-red-950/95 border border-red-500/70 text-xs text-red-100 shadow-2xl flex items-center gap-2';
+  } else if (type === 'success') {
+    icon.textContent = '✅';
+    toast.className = 'absolute top-3 left-1/2 -translate-x-1/2 z-30 max-w-[92vw] sm:max-w-md px-3.5 py-2 rounded-lg bg-emerald-950/95 border border-emerald-500/60 text-xs text-emerald-100 shadow-2xl flex items-center gap-2';
+  } else {
+    icon.textContent = '⏳';
+    toast.className = 'absolute top-3 left-1/2 -translate-x-1/2 z-30 max-w-[92vw] sm:max-w-md px-3.5 py-2 rounded-lg bg-slate-900/95 border border-sky-500/60 text-xs text-slate-100 shadow-2xl flex items-center gap-2';
+  }
+
+  toast.classList.remove('hidden');
+  if (duration > 0) {
+    toastTimer = setTimeout(() => toast.classList.add('hidden'), duration);
+  }
+}
+
+// ==========================================
+// 1. PWA Service Worker 註冊與自動更新機制
 // ==========================================
 let deferredPrompt = null;
+let swRegistration = null;
 const swStatusText = document.getElementById('sw-status-text');
 const btnTriggerInstall = document.getElementById('btn-trigger-install');
+const btnForceUpdate = document.getElementById('btn-force-update');
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
-      const reg = await navigator.serviceWorker.register('./sw.js');
-      if (swStatusText) swStatusText.textContent = '已啟用 (離線快取就緒)';
-      console.log('ServiceWorker registered:', reg.scope);
+      const reg = await navigator.serviceWorker.register('./sw.js', {
+        updateViaCache: 'none'
+      });
+      swRegistration = reg;
+
+      if (swStatusText) swStatusText.textContent = '已啟用 (自動更新就緒)';
+      reg.update();
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          reg.update();
+        }
+      });
+
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+        if (swStatusText) swStatusText.textContent = '發現新版本，正在同步...';
+      });
     } catch (err) {
       if (swStatusText) swStatusText.textContent = '需透過 HTTPS 執行';
+      console.warn('ServiceWorker registration failed:', err);
     }
   });
+
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
 }
+
+btnForceUpdate?.addEventListener('click', async () => {
+  if (!swRegistration) return;
+  if (swStatusText) swStatusText.textContent = '正在向伺服器檢查更新...';
+  await swRegistration.update();
+  setTimeout(() => {
+    if (swStatusText && !swRegistration.installing) {
+      swStatusText.textContent = '目前已是最新版本';
+    }
+  }, 1500);
+});
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
@@ -101,7 +168,7 @@ const container = document.getElementById('canvas-holder');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b1120);
 
-const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.01, 2000);
+const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.001, 10000);
 camera.position.set(5, 4, 6);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -120,14 +187,14 @@ controls.touches = {
   TWO: THREE.TOUCH.DOLLY_PAN
 };
 
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
 scene.add(ambientLight);
 
 const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.6);
 dirLight1.position.set(8, 12, 10);
 scene.add(dirLight1);
 
-const dirLight2 = new THREE.DirectionalLight(0x38bdf8, 0.65);
+const dirLight2 = new THREE.DirectionalLight(0x38bdf8, 0.7);
 dirLight2.position.set(-10, -5, -8);
 scene.add(dirLight2);
 
@@ -156,8 +223,10 @@ scene.add(edgeLinesGroup);
 // ==========================================
 // 4. 內建工業行星減速機組合件 (JT 範例)
 // ==========================================
-function buildDemoGearbox(customTitle = 'Planetary_Gearbox_Assembly.jt') {
-  clearAssembly();
+function buildDemoGearbox(customTitle = 'Planetary_Gearbox_Assembly.jt', shouldClear = true) {
+  if (shouldClear) {
+    clearAssembly();
+  }
   document.getElementById('active-file-label').textContent = customTitle;
 
   const matHousing = new THREE.MeshStandardMaterial({
@@ -223,7 +292,9 @@ function buildDemoGearbox(customTitle = 'Planetary_Gearbox_Assembly.jt') {
     { label: 'DATUM [A] 基準面', offset: new THREE.Vector3(-1.8, -0.1, 0.5) }
   ]);
 
-  finalizeSceneUpdate();
+  if (shouldClear) {
+    finalizeSceneUpdate();
+  }
 }
 
 function clearAssembly() {
@@ -242,7 +313,11 @@ function registerPart(mesh, name, materialName = 'Standard CAD Material', explod
   mesh.name = name;
   mesh.userData.partId = id;
   if (mesh.material) {
-    mesh.material.clippingPlanes = clippingEnabled ? [clipPlane] : [];
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    mats.forEach((m) => {
+      m.side = THREE.DoubleSide;
+      m.clippingPlanes = clippingEnabled ? [clipPlane] : [];
+    });
   }
   rootAssembly.add(mesh);
   partEntries.push({
@@ -273,94 +348,149 @@ async function handleImportFiles(fileList, options) {
   if (!fileList || fileList.length === 0) return;
   const { mode, unitScale, autoCenter } = options;
 
+  showToast(`正在解析 ${fileList[0].name}...`, 'info', 0);
+
   if (mode === 'replace') {
     clearAssembly();
   }
 
   const labelNames = [];
+  let loadedCount = 0;
 
-  for (const file of fileList) {
-    const ext = file.name.split('.').pop().toLowerCase();
-    labelNames.push(file.name);
+  try {
+    for (const file of fileList) {
+      const ext = file.name.split('.').pop().toLowerCase();
+      labelNames.push(file.name);
 
-    if (ext === 'jt') {
-      buildDemoGearbox(`${file.name} (JT 結構解析預覽)`);
-      continue;
+      if (ext === 'jt') {
+        buildDemoGearbox(`${file.name} (JT 結構解析預覽)`, false);
+        loadedCount += 7;
+        continue;
+      }
+
+      if (!['stl', 'obj', 'glb', 'gltf'].includes(ext)) {
+        showToast(`不支援的檔案格式：.${ext}（支援 .jt, .glb, .gltf, .stl, .obj）`, 'error', 4500);
+        continue;
+      }
+
+      const arrayBuffer = await file.arrayBuffer();
+
+      if (ext === 'stl') {
+        const loader = new STLLoader();
+        const geo = loader.parse(arrayBuffer);
+        if (!geo || !geo.attributes || !geo.attributes.position || geo.attributes.position.count === 0) {
+          throw new Error('STL 檔案不包含有效的三角網格資料');
+        }
+        geo.computeVertexNormals();
+        const mat = new THREE.MeshStandardMaterial({
+          color: 0x38bdf8, metalness: 0.65, roughness: 0.3, side: THREE.DoubleSide
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.scale.setScalar(unitScale);
+        if (autoCenter) centerAndGroundMesh(mesh);
+        registerPart(mesh, file.name, 'STL 網格模型', new THREE.Vector3(0, 1.2, 0), [
+          { label: `STL (${file.name})`, offset: new THREE.Vector3(0, 0.5, 0) }
+        ]);
+        loadedCount++;
+      } else if (ext === 'obj') {
+        const text = new TextDecoder().decode(arrayBuffer);
+        const loader = new OBJLoader();
+        const objGroup = loader.parse(text);
+        objGroup.scale.setScalar(unitScale);
+        objGroup.updateMatrixWorld(true);
+        if (autoCenter) centerAndGroundMesh(objGroup);
+        objGroup.updateMatrixWorld(true);
+
+        let idx = 0;
+        objGroup.traverse((child) => {
+          if (child.isMesh && child.geometry) {
+            idx++;
+            const worldPos = new THREE.Vector3();
+            const worldQuat = new THREE.Quaternion();
+            const worldScale = new THREE.Vector3();
+            child.matrixWorld.decompose(worldPos, worldQuat, worldScale);
+
+            const mat = new THREE.MeshStandardMaterial({
+              color: 0x94a3b8, metalness: 0.6, roughness: 0.35, side: THREE.DoubleSide
+            });
+            const clonedMesh = new THREE.Mesh(child.geometry, mat);
+            clonedMesh.position.copy(worldPos);
+            clonedMesh.quaternion.copy(worldQuat);
+            clonedMesh.scale.copy(worldScale);
+
+            registerPart(clonedMesh, child.name || `${file.name}_Part_${idx}`, 'OBJ 幾何網格', new THREE.Vector3(0, idx * 0.6, 0), []);
+            loadedCount++;
+          }
+        });
+      } else if (ext === 'glb' || ext === 'gltf') {
+        const loader = new GLTFLoader();
+        await new Promise((resolve, reject) => {
+          loader.parse(
+            arrayBuffer,
+            '',
+            (gltf) => {
+              const model = gltf.scene;
+              model.scale.setScalar(unitScale);
+              model.updateMatrixWorld(true);
+              if (autoCenter) centerAndGroundMesh(model);
+              model.updateMatrixWorld(true);
+
+              let idx = 0;
+              model.traverse((child) => {
+                if (child.isMesh && child.geometry) {
+                  idx++;
+                  const worldPos = new THREE.Vector3();
+                  const worldQuat = new THREE.Quaternion();
+                  const worldScale = new THREE.Vector3();
+                  child.matrixWorld.decompose(worldPos, worldQuat, worldScale);
+
+                  const mat = child.material
+                    ? (Array.isArray(child.material) ? child.material.map((m) => m.clone()) : child.material.clone())
+                    : new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.6, roughness: 0.35 });
+
+                  const clonedMesh = new THREE.Mesh(child.geometry, mat);
+                  clonedMesh.position.copy(worldPos);
+                  clonedMesh.quaternion.copy(worldQuat);
+                  clonedMesh.scale.copy(worldScale);
+
+                  registerPart(
+                    clonedMesh,
+                    child.name || `${file.name}_Node_${idx}`,
+                    (Array.isArray(mat) ? mat[0]?.name : mat?.name) || 'GLTF PBR 材質',
+                    new THREE.Vector3((idx % 2 === 0 ? 1 : -1) * 0.8, idx * 0.5, 0),
+                    idx === 1 ? [{ label: `GLTF (${file.name})`, offset: new THREE.Vector3(0, 0.5, 0) }] : []
+                  );
+                  loadedCount++;
+                }
+              });
+              resolve();
+            },
+            (err) => reject(err || new Error('GLB/GLTF 解析失敗（若為 .gltf 請確認未缺少外部 .bin 檔案）'))
+          );
+        });
+      }
     }
 
-    const arrayBuffer = await file.arrayBuffer();
+    if (loadedCount === 0) {
+      showToast('檔案中未找到可顯示的 3D 幾何網格，已恢復範例模型', 'error', 4500);
+      buildDemoGearbox();
+      return;
+    }
 
-    if (ext === 'stl') {
-      const loader = new STLLoader();
-      const geo = loader.parse(arrayBuffer);
-      geo.computeVertexNormals();
-      const mat = new THREE.MeshStandardMaterial({
-        color: 0x38bdf8, metalness: 0.65, roughness: 0.3, side: THREE.DoubleSide
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.scale.setScalar(unitScale);
-      if (autoCenter) centerAndGroundMesh(mesh);
-      registerPart(mesh, file.name, 'STL 網格模型', new THREE.Vector3(0, 1.2, 0), [
-        { label: `已匯入 STL (${file.name})`, offset: new THREE.Vector3(0, 0.5, 0) }
-      ]);
-    } else if (ext === 'obj') {
-      const text = new TextDecoder().decode(arrayBuffer);
-      const loader = new OBJLoader();
-      const objGroup = loader.parse(text);
-      objGroup.scale.setScalar(unitScale);
-      if (autoCenter) centerAndGroundMesh(objGroup);
-      let idx = 0;
-      objGroup.traverse((child) => {
-        if (child.isMesh) {
-          idx++;
-          child.material = new THREE.MeshStandardMaterial({
-            color: 0x94a3b8, metalness: 0.6, roughness: 0.35, side: THREE.DoubleSide
-          });
-          registerPart(child.clone(), `${file.name}_Part_${idx}`, 'OBJ 幾何網格', new THREE.Vector3(0, idx * 0.6, 0), []);
-        }
-      });
-    } else if (ext === 'glb' || ext === 'gltf') {
-      const loader = new GLTFLoader();
-      await new Promise((resolve) => {
-        loader.parse(arrayBuffer, '', (gltf) => {
-          const model = gltf.scene;
-          model.scale.setScalar(unitScale);
-          if (autoCenter) centerAndGroundMesh(model);
-          let idx = 0;
-          model.traverse((child) => {
-            if (child.isMesh) {
-              idx++;
-              const worldPos = new THREE.Vector3();
-              const worldQuat = new THREE.Quaternion();
-              const worldScale = new THREE.Vector3();
-              child.updateWorldMatrix(true, false);
-              child.matrixWorld.decompose(worldPos, worldQuat, worldScale);
-
-              const clonedMesh = new THREE.Mesh(child.geometry, child.material);
-              clonedMesh.position.copy(worldPos);
-              clonedMesh.quaternion.copy(worldQuat);
-              clonedMesh.scale.copy(worldScale);
-
-              registerPart(
-                clonedMesh,
-                child.name || `${file.name}_Node_${idx}`,
-                child.material?.name || 'GLTF PBR 材質',
-                new THREE.Vector3((idx % 2 === 0 ? 1 : -1) * 0.8, idx * 0.5, 0),
-                idx === 1 ? [{ label: `GLTF 節點 (${file.name})`, offset: new THREE.Vector3(0, 0.5, 0) }] : []
-              );
-            }
-          });
-          resolve();
-        });
-      });
+    document.getElementById('active-file-label').textContent = labelNames.join(', ');
+    finalizeSceneUpdate();
+    showToast(`成功匯入 ${labelNames.join(', ')}（共 ${loadedCount} 個零件節點）`, 'success', 3500);
+  } catch (err) {
+    console.error('Import error:', err);
+    showToast(`匯入失敗：${err.message || '檔案格式錯誤或已損毀'}`, 'error', 5000);
+    if (partEntries.length === 0) {
+      buildDemoGearbox();
     }
   }
-
-  document.getElementById('active-file-label').textContent = labelNames.join(', ');
-  finalizeSceneUpdate();
 }
 
 function centerAndGroundMesh(obj) {
+  obj.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(obj);
   if (box.isEmpty()) return;
   const center = box.getCenter(new THREE.Vector3());
@@ -377,22 +507,26 @@ function rebuildEdgeLines() {
     edgeLinesGroup.remove(edgeLinesGroup.children[0]);
   }
   partEntries.forEach((entry) => {
-    const edges = new THREE.EdgesGeometry(entry.mesh.geometry, 28);
-    const lineMat = new THREE.LineBasicMaterial({ color: 0x0f172a, transparent: true, opacity: 0.75 });
-    const lineSeg = new THREE.LineSegments(edges, lineMat);
-    lineSeg.position.copy(entry.mesh.position);
-    lineSeg.quaternion.copy(entry.mesh.quaternion);
-    lineSeg.scale.copy(entry.mesh.scale);
-    lineSeg.visible = entry.mesh.visible && (renderMode === 'edges');
-    entry.edgeLine = lineSeg;
-    edgeLinesGroup.add(lineSeg);
+    try {
+      const edges = new THREE.EdgesGeometry(entry.mesh.geometry, 28);
+      const lineMat = new THREE.LineBasicMaterial({ color: 0x0f172a, transparent: true, opacity: 0.75 });
+      const lineSeg = new THREE.LineSegments(edges, lineMat);
+      lineSeg.position.copy(entry.mesh.position);
+      lineSeg.quaternion.copy(entry.mesh.quaternion);
+      lineSeg.scale.copy(entry.mesh.scale);
+      lineSeg.visible = entry.mesh.visible && (renderMode === 'edges');
+      entry.edgeLine = lineSeg;
+      edgeLinesGroup.add(lineSeg);
+    } catch (e) {
+      console.warn('Edge generation skipped for part:', entry.name);
+    }
   });
 }
 
 function applyRenderMode(mode) {
   renderMode = mode;
   document.querySelectorAll('.render-btn').forEach((btn) => {
-    const isMobileBar = btn.closest('.xl\\:hidden');
+    const isMobileBar = btn.closest('.xl\:hidden');
     if (btn.dataset.render === mode) {
       btn.className = isMobileBar
         ? 'render-btn px-2.5 py-1 text-[11px] rounded bg-sky-600 text-white font-medium whitespace-nowrap shrink-0'
@@ -405,13 +539,15 @@ function applyRenderMode(mode) {
   });
 
   partEntries.forEach((entry) => {
-    const mat = entry.mesh.material;
-    if (!mat) return;
-    mat.wireframe = (mode === 'wireframe');
-    mat.transparent = (mode === 'xray');
-    mat.opacity = (mode === 'xray') ? 0.32 : 1.0;
-    mat.depthWrite = (mode !== 'xray');
-    mat.needsUpdate = true;
+    const mats = Array.isArray(entry.mesh.material) ? entry.mesh.material : [entry.mesh.material];
+    mats.forEach((mat) => {
+      if (!mat) return;
+      mat.wireframe = (mode === 'wireframe');
+      mat.transparent = (mode === 'xray');
+      mat.opacity = (mode === 'xray') ? 0.32 : 1.0;
+      mat.depthWrite = (mode !== 'xray');
+      mat.needsUpdate = true;
+    });
     if (entry.edgeLine) {
       entry.edgeLine.visible = entry.mesh.visible && (mode === 'edges');
     }
@@ -419,13 +555,18 @@ function applyRenderMode(mode) {
 }
 
 function fitCameraToObject(object) {
+  object.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object);
   if (box.isEmpty()) return;
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z);
+  const maxDim = Math.max(size.x, size.y, size.z, 0.01);
   const isPortrait = container.clientHeight > container.clientWidth;
   const dist = maxDim * (isPortrait ? 2.4 : 1.85);
+
+  camera.near = Math.max(maxDim / 10000, 0.0001);
+  camera.far = Math.max(maxDim * 200, 2000);
+  camera.updateProjectionMatrix();
 
   controls.target.copy(center);
   camera.position.set(center.x + dist * 0.85, center.y + dist * 0.65, center.z + dist * 0.95);
@@ -434,15 +575,16 @@ function fitCameraToObject(object) {
 }
 
 function setStandardView(view) {
+  rootAssembly.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(rootAssembly);
   const center = box.isEmpty() ? new THREE.Vector3(0, 1, 0) : box.getCenter(new THREE.Vector3());
   const size = box.isEmpty() ? new THREE.Vector3(4, 4, 4) : box.getSize(new THREE.Vector3());
   const isPortrait = container.clientHeight > container.clientWidth;
-  const dist = Math.max(size.x, size.y, size.z, 2) * (isPortrait ? 2.5 : 2.1);
+  const dist = Math.max(size.x, size.y, size.z, 0.05) * (isPortrait ? 2.5 : 2.1);
 
   controls.target.copy(center);
   if (view === 'front') camera.position.set(center.x, center.y, center.z + dist);
-  else if (view === 'top') camera.position.set(center.x, center.y + dist, center.z + 0.01);
+  else if (view === 'top') camera.position.set(center.x, center.y + dist, center.z + 0.001);
   else if (view === 'right') camera.position.set(center.x + dist, center.y, center.z);
   else if (view === 'iso') camera.position.set(center.x + dist * 0.8, center.y + dist * 0.7, center.z + dist * 0.8);
   else if (view === 'fit') fitCameraToObject(rootAssembly);
@@ -494,14 +636,17 @@ function renderBOMTree(filterText = '') {
 function selectPart(partId, openMobileProps = false) {
   selectedPartId = partId;
   partEntries.forEach((entry) => {
-    if (!entry.mesh.material || !entry.mesh.material.emissive) return;
-    if (entry.id === partId) {
-      entry.mesh.material.emissive.setHex(0x0284c7);
-      entry.mesh.material.emissiveIntensity = 0.35;
-    } else {
-      entry.mesh.material.emissive.setHex(0x000000);
-      entry.mesh.material.emissiveIntensity = 0;
-    }
+    const mats = Array.isArray(entry.mesh.material) ? entry.mesh.material : [entry.mesh.material];
+    mats.forEach((mat) => {
+      if (!mat || !mat.emissive) return;
+      if (entry.id === partId) {
+        mat.emissive.setHex(0x0284c7);
+        mat.emissiveIntensity = 0.35;
+      } else {
+        mat.emissive.setHex(0x000000);
+        mat.emissiveIntensity = 0;
+      }
+    });
   });
 
   renderBOMTree(document.getElementById('tree-search').value);
@@ -610,10 +755,13 @@ document.getElementById('explode-slider').addEventListener('input', (e) => {
 document.getElementById('section-enable').addEventListener('change', (e) => {
   clippingEnabled = e.target.checked;
   partEntries.forEach((entry) => {
-    if (entry.mesh.material) {
-      entry.mesh.material.clippingPlanes = clippingEnabled ? [clipPlane] : [];
-      entry.mesh.material.needsUpdate = true;
-    }
+    const mats = Array.isArray(entry.mesh.material) ? entry.mesh.material : [entry.mesh.material];
+    mats.forEach((mat) => {
+      if (mat) {
+        mat.clippingPlanes = clippingEnabled ? [clipPlane] : [];
+        mat.needsUpdate = true;
+      }
+    });
   });
 });
 
@@ -677,13 +825,17 @@ document.getElementById('btn-close-import')?.addEventListener('click', closeImpo
 document.getElementById('btn-cancel-import')?.addEventListener('click', closeImportModal);
 
 fileInput.addEventListener('change', (e) => {
-  stagedFiles = Array.from(e.target.files || []);
+  const files = Array.from(e.target.files || []);
+  if (files.length === 0) return;
+  stagedFiles = files;
+
   const box = document.getElementById('selected-files-box');
   const list = document.getElementById('selected-files-list');
-  if (stagedFiles.length > 0) {
-    box.classList.remove('hidden');
-    list.textContent = stagedFiles.map((f) => `${f.name} (${(f.size / 1024).toFixed(1)} KB)`).join('、');
-  }
+  const confirmBtn = document.getElementById('btn-confirm-import');
+
+  box.classList.remove('hidden');
+  list.textContent = stagedFiles.map((f) => `${f.name} (${(f.size / 1024).toFixed(1)} KB)`).join('、');
+  if (confirmBtn) confirmBtn.textContent = `載入已選檔案 (${stagedFiles.length})`;
 });
 
 document.getElementById('btn-confirm-import').addEventListener('click', async () => {
@@ -691,14 +843,18 @@ document.getElementById('btn-confirm-import').addEventListener('click', async ()
     fileInput.click();
     return;
   }
+  const filesToProcess = [...stagedFiles];
   const mode = document.getElementById('import-mode').value;
   const unitScale = parseFloat(document.getElementById('import-unit').value);
   const autoCenter = document.getElementById('import-center').checked;
-  closeImportModal();
-  await handleImportFiles(stagedFiles, { mode, unitScale, autoCenter });
+
   stagedFiles = [];
   fileInput.value = '';
   document.getElementById('selected-files-box').classList.add('hidden');
+  document.getElementById('btn-confirm-import').textContent = '選擇 / 載入模型';
+  closeImportModal();
+
+  await handleImportFiles(filesToProcess, { mode, unitScale, autoCenter });
 });
 
 const dropOverlay = document.getElementById('drop-overlay');
@@ -732,7 +888,6 @@ const pwaModal = document.getElementById('pwa-modal');
 document.getElementById('btn-open-pwa')?.addEventListener('click', () => pwaModal.classList.remove('hidden'));
 document.getElementById('btn-close-pwa')?.addEventListener('click', () => pwaModal.classList.add('hidden'));
 
-// 區分點擊選取與拖曳旋轉 (避免手機拖曳旋轉誤觸零件彈窗)
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let downPos = { x: 0, y: 0 };
@@ -756,7 +911,6 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
 });
 
-// ResizeObserver 確保抽屜開關或手機旋轉時 3D 畫布精準貼合容器
 const resizeObserver = new ResizeObserver(() => {
   if (!container.clientWidth || !container.clientHeight) return;
   camera.aspect = container.clientWidth / container.clientHeight;
