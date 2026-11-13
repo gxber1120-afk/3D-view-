@@ -1,7 +1,7 @@
 {
   "name": "JT2Go Web Viewer - 3D CAD & PMI 檢視器",
   "short_name": "JT2Go Web",
-  "description": "支援 JT2Go、GLB、GLTF、STL、OBJ 的工業級 3D CAD 網頁檢視器與離線 PWA 應用",
+  "description": "支援 JT2Go、GLB、GLTF、STL、OBJ 的工業級 3D CAD 響應式網頁檢視器與離線 PWA 應用",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

@@ -18,8 +18,7 @@ if ('serviceWorker' in navigator) {
       if (swStatusText) swStatusText.textContent = '已啟用 (離線快取就緒)';
       console.log('ServiceWorker registered:', reg.scope);
     } catch (err) {
-      if (swStatusText) swStatusText.textContent = '需透過 HTTP/HTTPS 伺服器執行';
-      console.warn('ServiceWorker registration failed:', err);
+      if (swStatusText) swStatusText.textContent = '需透過 HTTPS 執行';
     }
   });
 }
@@ -38,19 +37,19 @@ btnTriggerInstall?.addEventListener('click', async () => {
   btnTriggerInstall.classList.add('hidden');
 });
 
-// 網路狀態監聽
 function updateNetworkStatus() {
   const dot = document.getElementById('network-dot');
   const text = document.getElementById('network-text');
   const badge = document.getElementById('network-badge');
+  if (!dot || !text || !badge) return;
   if (navigator.onLine) {
     dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
     text.textContent = '線上就緒';
-    badge.className = 'hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px]';
+    badge.className = 'hidden md:flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] whitespace-nowrap';
   } else {
     dot.className = 'w-2 h-2 rounded-full bg-amber-400';
     text.textContent = '離線模式';
-    badge.className = 'hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px]';
+    badge.className = 'hidden md:flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] whitespace-nowrap';
   }
 }
 window.addEventListener('online', updateNetworkStatus);
@@ -58,7 +57,45 @@ window.addEventListener('offline', updateNetworkStatus);
 updateNetworkStatus();
 
 // ==========================================
-// 2. Three.js 3D 場景初始化
+// 2. 手機版底部抽屜 (Drawer) 控制邏輯
+// ==========================================
+const leftSidebar = document.getElementById('left-sidebar');
+const rightSidebar = document.getElementById('right-sidebar');
+const drawerBackdrop = document.getElementById('mobile-drawer-backdrop');
+
+function openDrawer(side) {
+  closeAllDrawers();
+  if (side === 'left') {
+    leftSidebar.classList.remove('translate-y-full');
+  } else if (side === 'right') {
+    rightSidebar.classList.remove('translate-y-full');
+  }
+  drawerBackdrop.classList.remove('hidden');
+}
+
+function closeAllDrawers() {
+  leftSidebar.classList.add('translate-y-full');
+  rightSidebar.classList.add('translate-y-full');
+  drawerBackdrop.classList.add('hidden');
+}
+
+drawerBackdrop.addEventListener('click', closeAllDrawers);
+document.getElementById('btn-close-left-drawer')?.addEventListener('click', closeAllDrawers);
+document.getElementById('btn-close-right-drawer')?.addEventListener('click', closeAllDrawers);
+
+document.getElementById('mobile-nav-bom')?.addEventListener('click', () => openDrawer('left'));
+document.getElementById('mobile-nav-props')?.addEventListener('click', () => openDrawer('right'));
+document.getElementById('mobile-nav-analysis')?.addEventListener('click', () => {
+  closeAllDrawers();
+  document.getElementById('analysis-panel').classList.toggle('hidden');
+});
+document.getElementById('mobile-nav-import')?.addEventListener('click', () => {
+  closeAllDrawers();
+  openImportModal();
+});
+
+// ==========================================
+// 3. Three.js 3D 場景初始化與觸控優化
 // ==========================================
 const container = document.getElementById('canvas-holder');
 const scene = new THREE.Scene();
@@ -78,8 +115,11 @@ container.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.07;
+controls.touches = {
+  ONE: THREE.TOUCH.ROTATE,
+  TWO: THREE.TOUCH.DOLLY_PAN
+};
 
-// 燈光與基準網格
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
 scene.add(ambientLight);
 
@@ -98,17 +138,15 @@ const axesHelper = new THREE.AxesHelper(1.2);
 axesHelper.position.set(-7.5, 0.01, -7.5);
 scene.add(axesHelper);
 
-// 剖面切割平面
 const clipPlane = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0.5);
 let clippingEnabled = false;
 let clipAxis = 'x';
 
-// 模型管理狀態
 const rootAssembly = new THREE.Group();
 rootAssembly.name = 'Planetary_Gearbox_Assembly';
 scene.add(rootAssembly);
 
-let partEntries = []; // { id, name, mesh, basePos, explodeDir, materialName, pmi }
+let partEntries = [];
 let selectedPartId = null;
 let renderMode = 'shaded';
 let showPMI = true;
@@ -116,7 +154,7 @@ let edgeLinesGroup = new THREE.Group();
 scene.add(edgeLinesGroup);
 
 // ==========================================
-// 3. 內建工業行星減速機組合件 (JT 範例)
+// 4. 內建工業行星減速機組合件 (JT 範例)
 // ==========================================
 function buildDemoGearbox(customTitle = 'Planetary_Gearbox_Assembly.jt') {
   clearAssembly();
@@ -138,7 +176,6 @@ function buildDemoGearbox(customTitle = 'Planetary_Gearbox_Assembly.jt') {
     color: 0x334155, metalness: 0.6, roughness: 0.4, side: THREE.DoubleSide
   });
 
-  // 1. 外齒環殼體
   const ringGeo = new THREE.CylinderGeometry(2.1, 2.1, 1.3, 48, 1, true);
   const ringMesh = new THREE.Mesh(ringGeo, matHousing);
   ringMesh.position.set(0, 1.4, 0);
@@ -147,7 +184,6 @@ function buildDemoGearbox(customTitle = 'Planetary_Gearbox_Assembly.jt') {
     { label: '◎ Ø0.015 A', offset: new THREE.Vector3(-2.1, 0.3, 0) }
   ]);
 
-  // 2. 中心太陽輪
   const sunGeo = new THREE.CylinderGeometry(0.65, 0.65, 1.6, 24);
   const sunMesh = new THREE.Mesh(sunGeo, matSunGear);
   sunMesh.position.set(0, 1.4, 0);
@@ -156,7 +192,6 @@ function buildDemoGearbox(customTitle = 'Planetary_Gearbox_Assembly.jt') {
     { label: 'HRC 58~62 表面硬化', offset: new THREE.Vector3(0.65, 0.2, 0) }
   ]);
 
-  // 3. 三顆行星齒輪
   const planetAngles = [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3];
   planetAngles.forEach((ang, idx) => {
     const r = 1.32;
@@ -174,7 +209,6 @@ function buildDemoGearbox(customTitle = 'Planetary_Gearbox_Assembly.jt') {
     );
   });
 
-  // 4. 頂部行星架法蘭蓋
   const topCapGeo = new THREE.CylinderGeometry(2.15, 2.15, 0.25, 48);
   const topCapMesh = new THREE.Mesh(topCapGeo, matCarrier);
   topCapMesh.position.set(0, 2.25, 0);
@@ -182,7 +216,6 @@ function buildDemoGearbox(customTitle = 'Planetary_Gearbox_Assembly.jt') {
     { label: '⊥ 0.010 B 端面跳動', offset: new THREE.Vector3(1.5, 0.2, 0) }
   ]);
 
-  // 5. 底部安裝法蘭座
   const baseGeo = new THREE.CylinderGeometry(2.3, 2.4, 0.35, 48);
   const baseMesh = new THREE.Mesh(baseGeo, matFlange);
   baseMesh.position.set(0, 0.55, 0);
@@ -228,13 +261,13 @@ function finalizeSceneUpdate() {
   applyRenderMode(renderMode);
   renderBOMTree();
   if (partEntries.length > 0) {
-    selectPart(partEntries[0].id);
+    selectPart(partEntries[0].id, false);
   }
   fitCameraToObject(rootAssembly);
 }
 
 // ==========================================
-// 4. 外部檔案匯入 (.GLB, .GLTF, .STL, .OBJ, .JT)
+// 5. 外部檔案匯入 (.GLB, .GLTF, .STL, .OBJ, .JT)
 // ==========================================
 async function handleImportFiles(fileList, options) {
   if (!fileList || fileList.length === 0) return;
@@ -251,7 +284,6 @@ async function handleImportFiles(fileList, options) {
     labelNames.push(file.name);
 
     if (ext === 'jt') {
-      // 模擬 JT 結構解析與預覽載入
       buildDemoGearbox(`${file.name} (JT 結構解析預覽)`);
       continue;
     }
@@ -338,7 +370,7 @@ function centerAndGroundMesh(obj) {
 }
 
 // ==========================================
-// 5. 渲染模式、邊線與相機控制
+// 6. 渲染模式、邊線與相機控制
 // ==========================================
 function rebuildEdgeLines() {
   while (edgeLinesGroup.children.length > 0) {
@@ -360,10 +392,15 @@ function rebuildEdgeLines() {
 function applyRenderMode(mode) {
   renderMode = mode;
   document.querySelectorAll('.render-btn').forEach((btn) => {
+    const isMobileBar = btn.closest('.xl\\:hidden');
     if (btn.dataset.render === mode) {
-      btn.className = 'render-btn px-2.5 py-1 text-xs rounded bg-sky-600 text-white font-medium transition';
+      btn.className = isMobileBar
+        ? 'render-btn px-2.5 py-1 text-[11px] rounded bg-sky-600 text-white font-medium whitespace-nowrap shrink-0'
+        : 'render-btn px-2.5 py-1 text-xs rounded bg-sky-600 text-white font-medium transition whitespace-nowrap';
     } else {
-      btn.className = 'render-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition';
+      btn.className = isMobileBar
+        ? 'render-btn px-2.5 py-1 text-[11px] rounded bg-slate-900 border border-slate-800 text-slate-300 whitespace-nowrap shrink-0'
+        : 'render-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition whitespace-nowrap';
     }
   });
 
@@ -387,7 +424,8 @@ function fitCameraToObject(object) {
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z);
-  const dist = maxDim * 1.85;
+  const isPortrait = container.clientHeight > container.clientWidth;
+  const dist = maxDim * (isPortrait ? 2.4 : 1.85);
 
   controls.target.copy(center);
   camera.position.set(center.x + dist * 0.85, center.y + dist * 0.65, center.z + dist * 0.95);
@@ -399,7 +437,8 @@ function setStandardView(view) {
   const box = new THREE.Box3().setFromObject(rootAssembly);
   const center = box.isEmpty() ? new THREE.Vector3(0, 1, 0) : box.getCenter(new THREE.Vector3());
   const size = box.isEmpty() ? new THREE.Vector3(4, 4, 4) : box.getSize(new THREE.Vector3());
-  const dist = Math.max(size.x, size.y, size.z, 2) * 2.1;
+  const isPortrait = container.clientHeight > container.clientWidth;
+  const dist = Math.max(size.x, size.y, size.z, 2) * (isPortrait ? 2.5 : 2.1);
 
   controls.target.copy(center);
   if (view === 'front') camera.position.set(center.x, center.y, center.z + dist);
@@ -411,7 +450,7 @@ function setStandardView(view) {
 }
 
 // ==========================================
-// 6. BOM 結構樹與屬性檢查器連動
+// 7. BOM 結構樹與屬性檢查器連動
 // ==========================================
 function renderBOMTree(filterText = '') {
   const treeBox = document.getElementById('bom-tree-container');
@@ -423,17 +462,20 @@ function renderBOMTree(filterText = '') {
 
     const row = document.createElement('div');
     const isSel = entry.id === selectedPartId;
-    row.className = `flex items-center justify-between px-2 py-1.5 rounded cursor-pointer transition ${
+    row.className = `flex items-center justify-between px-2.5 py-2 rounded-lg cursor-pointer transition ${
       isSel ? 'bg-sky-600/30 border border-sky-500/50 text-white' : 'hover:bg-slate-800/80 text-slate-300'
     }`;
 
     const left = document.createElement('div');
-    left.className = 'flex items-center gap-1.5 truncate';
+    left.className = 'flex items-center gap-2 truncate';
     left.innerHTML = `<span class="text-sky-400">▪</span><span class="truncate">${entry.name}</span>`;
-    left.onclick = () => selectPart(entry.id);
+    left.onclick = () => {
+      selectPart(entry.id, true);
+      if (window.innerWidth < 1024) closeAllDrawers();
+    };
 
     const eyeBtn = document.createElement('button');
-    eyeBtn.className = `text-[11px] px-1 rounded ${entry.mesh.visible ? 'text-slate-300 hover:text-white' : 'text-slate-600'}`;
+    eyeBtn.className = `text-xs px-1.5 py-0.5 rounded ${entry.mesh.visible ? 'text-slate-300 hover:text-white' : 'text-slate-600'}`;
     eyeBtn.textContent = entry.mesh.visible ? '👁' : '🚫';
     eyeBtn.title = '顯示 / 隱藏零件';
     eyeBtn.onclick = (e) => {
@@ -449,7 +491,7 @@ function renderBOMTree(filterText = '') {
   });
 }
 
-function selectPart(partId) {
+function selectPart(partId, openMobileProps = false) {
   selectedPartId = partId;
   partEntries.forEach((entry) => {
     if (!entry.mesh.material || !entry.mesh.material.emissive) return;
@@ -464,6 +506,9 @@ function selectPart(partId) {
 
   renderBOMTree(document.getElementById('tree-search').value);
   updateInspector(partEntries.find((p) => p.id === partId));
+  if (openMobileProps && window.innerWidth < 1024) {
+    openDrawer('right');
+  }
 }
 
 function updateInspector(entry) {
@@ -487,7 +532,7 @@ function updateInspector(entry) {
   if (entry.pmi && entry.pmi.length > 0) {
     entry.pmi.forEach((item) => {
       const div = document.createElement('div');
-      div.className = 'bg-slate-950 border border-sky-500/30 rounded px-2 py-1.5 text-sky-300 font-mono';
+      div.className = 'bg-slate-950 border border-sky-500/30 rounded px-2.5 py-1.5 text-sky-300 font-mono';
       div.textContent = item.label;
       pmiList.appendChild(div);
     });
@@ -497,7 +542,7 @@ function updateInspector(entry) {
 }
 
 // ==========================================
-// 7. 3D PMI 螢幕座標投影更新
+// 8. 3D PMI 螢幕座標投影更新
 // ==========================================
 const pmiOverlayLayer = document.getElementById('pmi-overlay-layer');
 
@@ -517,7 +562,7 @@ function updatePMIOverlay() {
 
       const x = (projected.x * 0.5 + 0.5) * width;
       const y = (-(projected.y * 0.5) + 0.5) * height;
-      if (x < 0 || x > width || y < 0 || y > height) return;
+      if (x < 12 || x > width - 12 || y < 24 || y > height - 12) return;
 
       const tag = document.createElement('div');
       tag.className = 'pmi-tag';
@@ -530,7 +575,7 @@ function updatePMIOverlay() {
 }
 
 // ==========================================
-// 8. UI 事件綁定
+// 9. UI 事件綁定
 // ==========================================
 document.querySelectorAll('.view-btn').forEach((btn) => {
   btn.addEventListener('click', () => setStandardView(btn.dataset.view));
@@ -546,10 +591,10 @@ document.getElementById('btn-toggle-pmi').addEventListener('click', (e) => {
 });
 
 const analysisPanel = document.getElementById('analysis-panel');
-document.getElementById('btn-toggle-analysis').addEventListener('click', () => {
+document.getElementById('btn-toggle-analysis')?.addEventListener('click', () => {
   analysisPanel.classList.toggle('hidden');
 });
-document.getElementById('btn-close-analysis').addEventListener('click', () => {
+document.getElementById('btn-close-analysis')?.addEventListener('click', () => {
   analysisPanel.classList.add('hidden');
 });
 
@@ -577,8 +622,8 @@ document.querySelectorAll('.axis-btn').forEach((btn) => {
     clipAxis = btn.dataset.axis;
     document.querySelectorAll('.axis-btn').forEach((b) => {
       b.className = b === btn
-        ? 'axis-btn flex-1 py-1 rounded bg-sky-600 text-white text-[11px]'
-        : 'axis-btn flex-1 py-1 rounded bg-slate-800 text-slate-300 text-[11px]';
+        ? 'axis-btn flex-1 py-1.5 rounded bg-sky-600 text-white text-xs font-medium'
+        : 'axis-btn flex-1 py-1.5 rounded bg-slate-800 text-slate-300 text-xs';
     });
     updateClipPlane();
   });
@@ -608,9 +653,9 @@ document.getElementById('btn-show-all').addEventListener('click', () => {
 
 document.getElementById('btn-reset-demo').addEventListener('click', () => {
   buildDemoGearbox();
+  if (window.innerWidth < 1024) closeAllDrawers();
 });
 
-// 匯入對話框與拖放事件
 const importModal = document.getElementById('import-modal');
 const fileInput = document.getElementById('file-input');
 let stagedFiles = [];
@@ -622,11 +667,14 @@ function closeImportModal() {
   importModal.classList.add('hidden');
 }
 
-document.getElementById('btn-open-import').addEventListener('click', openImportModal);
-document.getElementById('btn-tree-import').addEventListener('click', openImportModal);
-document.getElementById('btn-card-import').addEventListener('click', openImportModal);
-document.getElementById('btn-close-import').addEventListener('click', closeImportModal);
-document.getElementById('btn-cancel-import').addEventListener('click', closeImportModal);
+document.getElementById('btn-open-import')?.addEventListener('click', openImportModal);
+document.getElementById('btn-tree-import')?.addEventListener('click', () => {
+  closeAllDrawers();
+  openImportModal();
+});
+document.getElementById('btn-card-import')?.addEventListener('click', openImportModal);
+document.getElementById('btn-close-import')?.addEventListener('click', closeImportModal);
+document.getElementById('btn-cancel-import')?.addEventListener('click', closeImportModal);
 
 fileInput.addEventListener('change', (e) => {
   stagedFiles = Array.from(e.target.files || []);
@@ -653,7 +701,6 @@ document.getElementById('btn-confirm-import').addEventListener('click', async ()
   document.getElementById('selected-files-box').classList.add('hidden');
 });
 
-// 全視窗拖放
 const dropOverlay = document.getElementById('drop-overlay');
 let dragCounter = 0;
 
@@ -681,32 +728,42 @@ window.addEventListener('drop', async (e) => {
   }
 });
 
-// PWA Modal
 const pwaModal = document.getElementById('pwa-modal');
-document.getElementById('btn-open-pwa').addEventListener('click', () => pwaModal.classList.remove('hidden'));
-document.getElementById('btn-close-pwa').addEventListener('click', () => pwaModal.classList.add('hidden'));
+document.getElementById('btn-open-pwa')?.addEventListener('click', () => pwaModal.classList.remove('hidden'));
+document.getElementById('btn-close-pwa')?.addEventListener('click', () => pwaModal.classList.add('hidden'));
 
-// 點擊 3D 物件選取
+// 區分點擊選取與拖曳旋轉 (避免手機拖曳旋轉誤觸零件彈窗)
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
+let downPos = { x: 0, y: 0 };
+
 renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0) return;
+  downPos = { x: e.clientX, y: e.clientY };
+});
+
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (e.button !== 0 && e.pointerType === 'mouse') return;
+  const moveDist = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+  if (moveDist > 6) return;
+
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
   const intersects = raycaster.intersectObjects(rootAssembly.children, false);
   if (intersects.length > 0 && intersects[0].object.userData.partId) {
-    selectPart(intersects[0].object.userData.partId);
+    selectPart(intersects[0].object.userData.partId, true);
   }
 });
 
-// 視窗縮放與主渲染迴圈
-window.addEventListener('resize', () => {
+// ResizeObserver 確保抽屜開關或手機旋轉時 3D 畫布精準貼合容器
+const resizeObserver = new ResizeObserver(() => {
+  if (!container.clientWidth || !container.clientHeight) return;
   camera.aspect = container.clientWidth / container.clientHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(container.clientWidth, container.clientHeight);
 });
+resizeObserver.observe(container);
 
 function animate() {
   requestAnimationFrame(animate);
@@ -715,6 +772,5 @@ function animate() {
   updatePMIOverlay();
 }
 
-// 啟動預設模型與動畫
 buildDemoGearbox();
 animate();

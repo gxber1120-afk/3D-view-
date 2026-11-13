@@ -2,9 +2,9 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>JT2Go Web PWA - 3D CAD & PMI 檢視器</title>
-  <meta name="description" content="支援 JT2Go、GLB、GLTF、STL、OBJ 的工業級 3D CAD 網頁檢視器與離線 PWA 應用" />
+  <meta name="description" content="支援 JT2Go、GLB、GLTF、STL、OBJ 的工業級 3D CAD 響應式網頁檢視器與離線 PWA 應用" />
   <meta name="theme-color" content="#0f172a" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -14,16 +14,20 @@
   <link rel="apple-touch-icon" href="./icons/icon.svg" />
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    * { box-sizing: border-box; }
-    body, html {
-      margin: 0; padding: 0; width: 100%; height: 100%;
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100dvh;
       overflow: hidden; background-color: #0b1120; color: #e2e8f0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
     }
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    .safe-top { padding-top: env(safe-area-inset-top, 0px); }
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: #0f172a; }
     ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     .pmi-tag {
       position: absolute;
       pointer-events: none;
@@ -33,7 +37,7 @@
       color: #f8fafc;
       font-size: 11px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      padding: 3px 7px;
+      padding: 2px 6px;
       border-radius: 4px;
       white-space: nowrap;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
@@ -58,94 +62,118 @@
   }
   </script>
 </head>
-<body class="flex flex-col h-screen select-none">
+<body class="flex flex-col h-[100dvh] select-none overflow-hidden">
 
-  <!-- 頂部工具列 -->
-  <header class="h-12 bg-slate-900 border-b border-slate-800 px-3 flex items-center justify-between z-30 shrink-0">
-    <div class="flex items-center gap-2.5">
-      <div class="w-8 h-8 rounded bg-gradient-to-br from-sky-500 to-cyan-600 flex items-center justify-center font-bold text-white text-xs shadow">
+  <!-- 頂部工具列 (RWD 自適應) -->
+  <header class="safe-top bg-slate-900 border-b border-slate-800 px-2.5 sm:px-3 min-h-[3rem] flex items-center justify-between gap-2 z-30 shrink-0">
+    <!-- 左側品牌與檔名 -->
+    <div class="flex items-center gap-2 min-w-0">
+      <div class="w-8 h-8 rounded bg-gradient-to-br from-sky-500 to-cyan-600 flex items-center justify-center font-bold text-white text-xs shadow shrink-0">
         JT
       </div>
-      <div>
-        <div class="flex items-center gap-2">
-          <span class="font-semibold text-sm tracking-wide text-slate-100">JT2Go Web Viewer</span>
-          <span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 font-mono">PWA v2.4</span>
+      <div class="min-w-0">
+        <div class="flex items-center gap-1.5">
+          <span class="font-semibold text-sm tracking-wide text-slate-100 truncate">JT2Go Web</span>
+          <span class="hidden sm:inline-block text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 font-mono shrink-0">PWA</span>
         </div>
-        <div id="active-file-label" class="text-[11px] text-slate-400 truncate max-w-[220px] sm:max-w-xs">
-          Planetary_Gearbox_Assembly.jt (內建範例)
+        <div id="active-file-label" class="text-[11px] text-slate-400 truncate max-w-[135px] sm:max-w-[220px] md:max-w-xs">
+          Planetary_Gearbox_Assembly.jt
         </div>
       </div>
     </div>
 
-    <!-- 中央快捷視角與顯示控制 -->
-    <div class="hidden lg:flex items-center gap-1 bg-slate-950/70 p-1 rounded-lg border border-slate-800">
-      <button data-view="iso" class="view-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition">等角 ISO</button>
-      <button data-view="front" class="view-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition">前視</button>
-      <button data-view="top" class="view-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition">上視</button>
-      <button data-view="right" class="view-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition">右視</button>
-      <button data-view="fit" class="view-btn px-2.5 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-sky-300 font-medium transition">全覽 Fit</button>
+    <!-- 中央快捷視角與渲染模式 (桌面寬螢幕顯示) -->
+    <div class="hidden xl:flex items-center gap-1 bg-slate-950/70 p-1 rounded-lg border border-slate-800 shrink-0">
+      <button data-view="iso" class="view-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition whitespace-nowrap">等角 ISO</button>
+      <button data-view="front" class="view-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition whitespace-nowrap">前視</button>
+      <button data-view="top" class="view-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition whitespace-nowrap">上視</button>
+      <button data-view="right" class="view-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition whitespace-nowrap">右視</button>
+      <button data-view="fit" class="view-btn px-2.5 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-sky-300 font-medium transition whitespace-nowrap">全覽 Fit</button>
       <div class="w-px h-4 bg-slate-800 mx-1"></div>
-      <button data-render="shaded" class="render-btn px-2.5 py-1 text-xs rounded bg-sky-600 text-white font-medium transition">著色</button>
-      <button data-render="edges" class="render-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition">著色+邊線</button>
-      <button data-render="wireframe" class="render-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition">線框</button>
-      <button data-render="xray" class="render-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition">X光</button>
+      <button data-render="shaded" class="render-btn px-2.5 py-1 text-xs rounded bg-sky-600 text-white font-medium transition whitespace-nowrap">著色</button>
+      <button data-render="edges" class="render-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition whitespace-nowrap">著色+邊線</button>
+      <button data-render="wireframe" class="render-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition whitespace-nowrap">線框</button>
+      <button data-render="xray" class="render-btn px-2.5 py-1 text-xs rounded hover:bg-slate-800 text-slate-300 transition whitespace-nowrap">X光</button>
     </div>
 
-    <!-- 右側功能按鈕 -->
-    <div class="flex items-center gap-2">
-      <!-- 網路狀態指示 -->
-      <div id="network-badge" class="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px]">
+    <!-- 右側主要操作按鈕 (不換行、防止擠壓斷字) -->
+    <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+      <div id="network-badge" class="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] whitespace-nowrap">
         <span id="network-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
         <span id="network-text">線上就緒</span>
       </div>
 
-      <button id="btn-toggle-analysis" class="px-2.5 py-1.5 text-xs rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 flex items-center gap-1.5 transition">
+      <button id="btn-toggle-analysis" class="hidden sm:flex px-2.5 py-1.5 text-xs rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 items-center gap-1.5 transition whitespace-nowrap">
         <span>剖面 / 爆炸</span>
       </button>
 
-      <button id="btn-toggle-pmi" class="px-2.5 py-1.5 text-xs rounded-md bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 flex items-center gap-1.5 transition">
-        <span>PMI 標註</span>
+      <button id="btn-toggle-pmi" class="px-2 sm:px-2.5 py-1.5 text-xs rounded-md bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 flex items-center gap-1 transition whitespace-nowrap">
+        <span>PMI</span>
       </button>
 
-      <button id="btn-open-import" class="px-3 py-1.5 text-xs rounded-md bg-sky-600 hover:bg-sky-500 text-white font-medium shadow-sm flex items-center gap-1.5 transition">
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-        <span>匯入模型</span>
+      <button id="btn-open-import" class="px-2.5 sm:px-3 py-1.5 text-xs rounded-md bg-sky-600 hover:bg-sky-500 text-white font-medium shadow-sm flex items-center gap-1.5 transition whitespace-nowrap">
+        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+        <span>匯入</span>
       </button>
 
-      <button id="btn-open-pwa" class="px-2.5 py-1.5 text-xs rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 flex items-center gap-1 transition" title="PWA 安裝與離線快取設定">
+      <button id="btn-open-pwa" class="px-2 py-1.5 text-xs rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 flex items-center transition whitespace-nowrap" title="PWA 安裝與離線快取設定">
         <span>PWA</span>
       </button>
     </div>
   </header>
 
+  <!-- 手機與平板專用的橫向滑動視角/渲染快捷列 (xl 以下顯示) -->
+  <div class="xl:hidden bg-slate-950/95 border-b border-slate-800/90 px-2 py-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0 z-20">
+    <button data-view="fit" class="view-btn px-2.5 py-1 text-[11px] rounded bg-slate-800 text-sky-300 font-medium whitespace-nowrap shrink-0">全覽 Fit</button>
+    <button data-view="iso" class="view-btn px-2.5 py-1 text-[11px] rounded bg-slate-900 border border-slate-800 text-slate-300 whitespace-nowrap shrink-0">等角</button>
+    <button data-view="front" class="view-btn px-2.5 py-1 text-[11px] rounded bg-slate-900 border border-slate-800 text-slate-300 whitespace-nowrap shrink-0">前視</button>
+    <button data-view="top" class="view-btn px-2.5 py-1 text-[11px] rounded bg-slate-900 border border-slate-800 text-slate-300 whitespace-nowrap shrink-0">上視</button>
+    <button data-view="right" class="view-btn px-2.5 py-1 text-[11px] rounded bg-slate-900 border border-slate-800 text-slate-300 whitespace-nowrap shrink-0">右視</button>
+    <div class="w-px h-4 bg-slate-800 shrink-0 mx-0.5"></div>
+    <button data-render="shaded" class="render-btn px-2.5 py-1 text-[11px] rounded bg-sky-600 text-white font-medium whitespace-nowrap shrink-0">著色</button>
+    <button data-render="edges" class="render-btn px-2.5 py-1 text-[11px] rounded bg-slate-900 border border-slate-800 text-slate-300 whitespace-nowrap shrink-0">邊線</button>
+    <button data-render="wireframe" class="render-btn px-2.5 py-1 text-[11px] rounded bg-slate-900 border border-slate-800 text-slate-300 whitespace-nowrap shrink-0">線框</button>
+    <button data-render="xray" class="render-btn px-2.5 py-1 text-[11px] rounded bg-slate-900 border border-slate-800 text-slate-300 whitespace-nowrap shrink-0">X光</button>
+  </div>
+
   <!-- 主工作區 -->
   <div class="flex-1 flex overflow-hidden relative">
 
-    <!-- 左側：產品結構樹 (BOM) -->
-    <aside id="left-sidebar" class="w-64 bg-slate-900/95 border-r border-slate-800 flex flex-col z-20 shrink-0">
-      <div class="p-2.5 border-b border-slate-800 flex items-center justify-between">
-        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">產品結構樹 (BOM)</span>
-        <button id="btn-tree-import" class="text-[11px] px-2 py-0.5 rounded bg-sky-600/20 hover:bg-sky-600/40 text-sky-300 border border-sky-500/30 transition">
-          + 匯入檔案
-        </button>
+    <!-- 手機版抽屜背景遮罩 -->
+    <div id="mobile-drawer-backdrop" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-30 lg:hidden"></div>
+
+    <!-- 左側：產品結構樹 (BOM) - 桌面常駐側欄 / 手機底部上滑抽屜 -->
+    <aside id="left-sidebar" class="fixed inset-x-0 bottom-0 h-[62dvh] rounded-t-2xl border-t border-slate-700 translate-y-full transition-transform duration-250 ease-out z-40 bg-slate-900/98 flex flex-col lg:static lg:h-auto lg:w-64 lg:rounded-none lg:border-t-0 lg:border-r lg:border-slate-800 lg:translate-y-0 lg:z-20 shrink-0">
+      <!-- 手機抽屜把手 -->
+      <div class="lg:hidden flex justify-center pt-2 pb-1">
+        <div class="w-10 h-1 rounded-full bg-slate-700"></div>
+      </div>
+      <div class="px-3 py-2 border-b border-slate-800 flex items-center justify-between">
+        <span class="text-xs font-semibold uppercase tracking-wider text-slate-300">產品結構樹 (BOM)</span>
+        <div class="flex items-center gap-1.5">
+          <button id="btn-tree-import" class="text-[11px] px-2 py-0.5 rounded bg-sky-600/20 hover:bg-sky-600/40 text-sky-300 border border-sky-500/30 transition whitespace-nowrap">
+            + 匯入
+          </button>
+          <button id="btn-close-left-drawer" class="lg:hidden text-slate-400 hover:text-white px-1.5 py-0.5 text-sm">✕</button>
+        </div>
       </div>
       <div class="p-2 border-b border-slate-800">
-        <input id="tree-search" type="text" placeholder="搜尋零件名稱..." class="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500" />
+        <input id="tree-search" type="text" placeholder="搜尋零件名稱..." class="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500" />
       </div>
-      <div id="bom-tree-container" class="flex-1 overflow-y-auto p-1.5 space-y-0.5 text-xs"></div>
-      <div class="p-2 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between text-[11px] text-slate-400">
-        <button id="btn-show-all" class="hover:text-sky-300 transition">全部顯示</button>
-        <button id="btn-reset-demo" class="hover:text-sky-300 transition">載入內建範例</button>
+      <div id="bom-tree-container" class="flex-1 overflow-y-auto p-2 space-y-1 text-xs"></div>
+      <div class="p-2.5 border-t border-slate-800 bg-slate-950/80 flex items-center justify-between text-xs text-slate-400">
+        <button id="btn-show-all" class="hover:text-sky-300 transition py-0.5">全部顯示</button>
+        <button id="btn-reset-demo" class="hover:text-sky-300 transition py-0.5">載入內建範例</button>
       </div>
     </aside>
 
-    <!-- 中央：3D Canvas 視口 -->
-    <main id="viewport-container" class="flex-1 relative bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 overflow-hidden">
-      <div id="canvas-holder" class="w-full h-full"></div>
+    <!-- 中央：3D Canvas 視口 (手機版佔滿 100% 螢幕寬度) -->
+    <main id="viewport-container" class="flex-1 relative bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 overflow-hidden w-full">
+      <div id="canvas-holder" class="w-full h-full touch-none"></div>
       <div id="pmi-overlay-layer" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
 
-      <!-- 右上角快捷匯入提示卡片 -->
-      <div class="absolute top-3 right-3 z-10 bg-slate-900/85 backdrop-blur border border-slate-700/80 rounded-lg p-2.5 shadow-lg max-w-[230px]">
+      <!-- 右上角快捷匯入提示卡片 (僅桌面版顯示，避免手機擋住 3D 畫面) -->
+      <div class="hidden lg:block absolute top-3 right-3 z-10 bg-slate-900/85 backdrop-blur border border-slate-700/80 rounded-lg p-2.5 shadow-lg max-w-[230px]">
         <div class="flex items-center justify-between gap-2 mb-1">
           <span class="text-xs font-semibold text-slate-200">支援 3D / CAD 檔案</span>
           <span class="text-[10px] text-sky-400 font-mono">.JT .GLB .STL .OBJ</span>
@@ -158,11 +186,11 @@
         </button>
       </div>
 
-      <!-- 剖面與爆炸視圖浮動控制面板 -->
-      <div id="analysis-panel" class="hidden absolute bottom-4 left-4 z-20 w-72 bg-slate-900/95 backdrop-blur border border-slate-700 rounded-lg p-3.5 shadow-2xl">
+      <!-- 剖面與爆炸視圖浮動控制面板 (手機版底部置中、桌面版左下角) -->
+      <div id="analysis-panel" class="hidden absolute bottom-3 left-2.5 right-2.5 sm:right-auto sm:left-4 sm:bottom-4 z-20 sm:w-72 bg-slate-900/95 backdrop-blur border border-slate-700 rounded-xl p-3.5 shadow-2xl">
         <div class="flex items-center justify-between mb-3">
           <span class="text-xs font-semibold text-slate-100">組合件分析工具</span>
-          <button id="btn-close-analysis" class="text-slate-400 hover:text-white text-xs">✕</button>
+          <button id="btn-close-analysis" class="text-slate-400 hover:text-white text-xs px-1">✕</button>
         </div>
         <div class="space-y-3 text-xs">
           <div>
@@ -170,41 +198,49 @@
               <span>爆炸視圖展開 (Explode)</span>
               <span id="explode-val" class="font-mono text-sky-400">0%</span>
             </div>
-            <input id="explode-slider" type="range" min="0" max="100" value="0" class="w-full accent-sky-500" />
+            <input id="explode-slider" type="range" min="0" max="100" value="0" class="w-full accent-sky-500 h-2" />
           </div>
           <div class="pt-2 border-t border-slate-800">
             <div class="flex items-center justify-between mb-1.5">
               <span class="text-slate-300">剖面切割 (Section Plane)</span>
-              <label class="inline-flex items-center gap-1 cursor-pointer">
-                <input id="section-enable" type="checkbox" class="accent-sky-500" />
-                <span class="text-[11px] text-slate-400">啟用</span>
+              <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                <input id="section-enable" type="checkbox" class="accent-sky-500 w-4 h-4" />
+                <span class="text-xs text-slate-300">啟用</span>
               </label>
             </div>
-            <div class="flex gap-1 mb-2">
-              <button data-axis="x" class="axis-btn flex-1 py-1 rounded bg-sky-600 text-white text-[11px]">X 軸</button>
-              <button data-axis="y" class="axis-btn flex-1 py-1 rounded bg-slate-800 text-slate-300 text-[11px]">Y 軸</button>
-              <button data-axis="z" class="axis-btn flex-1 py-1 rounded bg-slate-800 text-slate-300 text-[11px]">Z 軸</button>
+            <div class="flex gap-1.5 mb-2">
+              <button data-axis="x" class="axis-btn flex-1 py-1.5 rounded bg-sky-600 text-white text-xs font-medium">X 軸</button>
+              <button data-axis="y" class="axis-btn flex-1 py-1.5 rounded bg-slate-800 text-slate-300 text-xs">Y 軸</button>
+              <button data-axis="z" class="axis-btn flex-1 py-1.5 rounded bg-slate-800 text-slate-300 text-xs">Z 軸</button>
             </div>
-            <input id="section-slider" type="range" min="-100" max="100" value="20" class="w-full accent-sky-500" />
+            <input id="section-slider" type="range" min="-100" max="100" value="20" class="w-full accent-sky-500 h-2" />
           </div>
         </div>
       </div>
 
-      <!-- 底部狀態列 -->
-      <div class="absolute bottom-2 right-3 z-10 text-[11px] text-slate-400 bg-slate-950/75 px-2.5 py-1 rounded border border-slate-800/80 pointer-events-none">
+      <!-- 底部操作提示列 (桌面版顯示滑鼠操作，手機版顯示觸控操作) -->
+      <div class="hidden sm:block absolute bottom-2 right-3 z-10 text-[11px] text-slate-400 bg-slate-950/75 px-2.5 py-1 rounded border border-slate-800/80 pointer-events-none">
         左鍵：旋轉 ｜ 右鍵：平移 ｜ 滾輪：縮放 ｜ 點擊零件：檢視 PMI
+      </div>
+      <div class="sm:hidden absolute bottom-2 left-1/2 -translate-x-1/2 z-10 text-[10px] text-slate-400/90 bg-slate-950/75 px-2.5 py-0.5 rounded-full border border-slate-800/80 pointer-events-none whitespace-nowrap">
+        單指旋轉 ｜ 雙指縮放平移 ｜ 點擊零件檢視 PMI
       </div>
     </main>
 
-    <!-- 右側：屬性與 PMI 檢查器 -->
-    <aside id="right-sidebar" class="w-64 bg-slate-900/95 border-l border-slate-800 flex flex-col z-20 shrink-0 hidden md:flex">
-      <div class="p-2.5 border-b border-slate-800">
-        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">屬性與 PMI 資訊</span>
+    <!-- 右側：屬性與 PMI 檢查器 - 桌面常駐側欄 / 手機底部上滑抽屜 -->
+    <aside id="right-sidebar" class="fixed inset-x-0 bottom-0 h-[62dvh] rounded-t-2xl border-t border-slate-700 translate-y-full transition-transform duration-250 ease-out z-40 bg-slate-900/98 flex flex-col lg:static lg:h-auto lg:w-64 lg:rounded-none lg:border-t-0 lg:border-l lg:border-slate-800 lg:translate-y-0 lg:z-20 shrink-0">
+      <!-- 手機抽屜把手 -->
+      <div class="lg:hidden flex justify-center pt-2 pb-1">
+        <div class="w-10 h-1 rounded-full bg-slate-700"></div>
       </div>
-      <div id="inspector-content" class="flex-1 overflow-y-auto p-3 space-y-4 text-xs">
-        <div class="bg-slate-950/70 border border-slate-800 rounded p-2.5 space-y-1.5">
+      <div class="px-3 py-2 border-b border-slate-800 flex items-center justify-between">
+        <span class="text-xs font-semibold uppercase tracking-wider text-slate-300">屬性與 PMI 資訊</span>
+        <button id="btn-close-right-drawer" class="lg:hidden text-slate-400 hover:text-white px-1.5 py-0.5 text-sm">✕</button>
+      </div>
+      <div id="inspector-content" class="flex-1 overflow-y-auto p-3 space-y-3.5 text-xs">
+        <div class="bg-slate-950/70 border border-slate-800 rounded p-2.5 space-y-1">
           <div class="text-[11px] text-slate-400">選取物件</div>
-          <div id="prop-name" class="font-semibold text-sky-300 text-sm">Planetary_Gearbox_Assembly</div>
+          <div id="prop-name" class="font-semibold text-sky-300 text-sm break-all">Planetary_Gearbox_Assembly</div>
           <div id="prop-type" class="text-[11px] text-slate-400">類型：組合件根節點 (Assembly)</div>
         </div>
 
@@ -229,9 +265,9 @@
         <div class="space-y-1.5">
           <div class="text-[11px] font-semibold text-slate-400 uppercase">工程與網格參數</div>
           <div class="bg-slate-950/70 border border-slate-800 rounded p-2.5 space-y-1.5 text-[11px]">
-            <div class="flex justify-between"><span class="text-slate-400">材質規格：</span><span id="prop-mat" class="text-slate-200">SCM415 合金鋼</span></div>
-            <div class="flex justify-between"><span class="text-slate-400">三角面數：</span><span id="prop-tris" class="font-mono text-slate-200">-</span></div>
-            <div class="flex justify-between"><span class="text-slate-400">公差標準：</span><span class="text-slate-200">ISO 2768-mK</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400 shrink-0">材質規格：</span><span id="prop-mat" class="text-slate-200 text-right">SCM415 合金鋼</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400 shrink-0">三角面數：</span><span id="prop-tris" class="font-mono text-slate-200">-</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400 shrink-0">公差標準：</span><span class="text-slate-200">ISO 2768-mK</span></div>
           </div>
         </div>
 
@@ -243,8 +279,28 @@
     </aside>
   </div>
 
+  <!-- 手機版底部導覽列 (lg 以下顯示，取代左右側欄佔位) -->
+  <nav class="lg:hidden safe-bottom bg-slate-900 border-t border-slate-800 grid grid-cols-4 text-[11px] text-slate-300 shrink-0 z-20">
+    <button id="mobile-nav-bom" class="py-2 flex flex-col items-center justify-center gap-0.5 hover:bg-slate-800/70 active:text-sky-400 transition">
+      <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h10M4 18h14"/></svg>
+      <span>結構樹 BOM</span>
+    </button>
+    <button id="mobile-nav-props" class="py-2 flex flex-col items-center justify-center gap-0.5 hover:bg-slate-800/70 active:text-sky-400 transition">
+      <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      <span>屬性 / PMI</span>
+    </button>
+    <button id="mobile-nav-analysis" class="py-2 flex flex-col items-center justify-center gap-0.5 hover:bg-slate-800/70 active:text-sky-400 transition">
+      <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"/></svg>
+      <span>剖面 / 爆炸</span>
+    </button>
+    <button id="mobile-nav-import" class="py-2 flex flex-col items-center justify-center gap-0.5 hover:bg-slate-800/70 active:text-sky-400 transition">
+      <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+      <span>匯入檔案</span>
+    </button>
+  </nav>
+
   <!-- 全視窗拖放檔案遮罩 -->
-  <div id="drop-overlay" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm border-4 border-dashed border-sky-400 flex flex-col items-center justify-center pointer-events-none">
+  <div id="drop-overlay" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm border-4 border-dashed border-sky-400 flex flex-col items-center justify-center pointer-events-none p-4 text-center">
     <div class="w-16 h-16 rounded-2xl bg-sky-500/20 border border-sky-400 flex items-center justify-center text-sky-300 mb-3">
       <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
     </div>
@@ -253,35 +309,35 @@
   </div>
 
   <!-- 匯入模型對話框 -->
-  <div id="import-modal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full shadow-2xl overflow-hidden">
-      <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+  <div id="import-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full shadow-2xl overflow-hidden max-h-[90dvh] flex flex-col">
+      <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between shrink-0">
         <h3 class="text-sm font-semibold text-white">匯入 3D CAD / JT2Go 模型檔案</h3>
-        <button id="btn-close-import" class="text-slate-400 hover:text-white text-sm">✕</button>
+        <button id="btn-close-import" class="text-slate-400 hover:text-white text-sm p-1">✕</button>
       </div>
-      <div class="p-4 space-y-4 text-xs">
-        <label for="file-input" class="block border-2 border-dashed border-slate-700 hover:border-sky-500 rounded-lg p-6 text-center cursor-pointer bg-slate-950/50 transition">
+      <div class="p-4 space-y-3.5 text-xs overflow-y-auto">
+        <label for="file-input" class="block border-2 border-dashed border-slate-700 hover:border-sky-500 rounded-lg p-5 text-center cursor-pointer bg-slate-950/50 transition">
           <div class="text-sky-400 font-semibold text-sm mb-1">點擊選擇檔案或拖放至此處</div>
-          <div class="text-slate-400 text-[11px]">支援格式：.jt (Siemens JT), .glb, .gltf, .stl, .obj</div>
+          <div class="text-slate-400 text-[11px]">支援格式：.jt, .glb, .gltf, .stl, .obj</div>
           <input id="file-input" type="file" multiple accept=".jt,.glb,.gltf,.stl,.obj" class="hidden" />
         </label>
 
         <div id="selected-files-box" class="hidden bg-slate-950 border border-slate-800 rounded p-2.5 space-y-1">
           <div class="text-[11px] text-slate-400">已選擇檔案：</div>
-          <div id="selected-files-list" class="text-sky-300 font-mono text-[11px]"></div>
+          <div id="selected-files-list" class="text-sky-300 font-mono text-[11px] break-all"></div>
         </div>
 
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-slate-400 mb-1">匯入模式</label>
-            <select id="import-mode" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200">
+            <select id="import-mode" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-2 text-slate-200">
               <option value="replace">取代目前場景</option>
               <option value="append">加入目前組合件</option>
             </select>
           </div>
           <div>
             <label class="block text-slate-400 mb-1">模型單位換算</label>
-            <select id="import-unit" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200">
+            <select id="import-unit" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-2 text-slate-200">
               <option value="1">原始比例 (1:1)</option>
               <option value="0.001">毫米 mm → 公尺 m (×0.001)</option>
               <option value="0.01">公分 cm → 公尺 m (×0.01)</option>
@@ -290,48 +346,48 @@
           </div>
         </div>
 
-        <label class="flex items-center gap-2 text-slate-300 cursor-pointer">
-          <input id="import-center" type="checkbox" checked class="accent-sky-500" />
+        <label class="flex items-center gap-2 text-slate-300 cursor-pointer py-1">
+          <input id="import-center" type="checkbox" checked class="accent-sky-500 w-4 h-4" />
           <span>自動置中模型並貼齊基準網格地面</span>
         </label>
 
         <div class="bg-amber-500/10 border border-amber-500/30 rounded p-2.5 text-[11px] text-amber-200/90 leading-relaxed">
-          <strong>關於原生 .JT 檔案：</strong> 匯入 <code class="font-mono">.jt</code> 時，系統將自動啟動「JT 結構解析與預覽模式」（產生對應節點樹與 PMI 測試模型）；若需在企業內網解析二進位 JT B-Rep 幾何，可串接後端 JT Open / HOOPS 轉檔服務。
+          <strong>關於原生 .JT 檔案：</strong> 匯入 <code class="font-mono">.jt</code> 時將啟動「JT 結構解析預覽模式」；企業內網環境可串接後端 JT Open / HOOPS 轉檔微服務直接轉換二進位幾何。
         </div>
       </div>
-      <div class="px-4 py-3 bg-slate-950 border-t border-slate-800 flex justify-end gap-2">
-        <button id="btn-cancel-import" class="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs">取消</button>
+      <div class="px-4 py-3 bg-slate-950 border-t border-slate-800 flex justify-end gap-2 shrink-0">
+        <button id="btn-cancel-import" class="px-3.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs">取消</button>
         <button id="btn-confirm-import" class="px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs">開始載入模型</button>
       </div>
     </div>
   </div>
 
   <!-- PWA 安裝與離線狀態對話框 -->
-  <div id="pwa-modal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+  <div id="pwa-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
     <div class="bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full shadow-2xl overflow-hidden">
       <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
         <h3 class="text-sm font-semibold text-white">PWA 離線應用與安裝狀態</h3>
-        <button id="btn-close-pwa" class="text-slate-400 hover:text-white text-sm">✕</button>
+        <button id="btn-close-pwa" class="text-slate-400 hover:text-white text-sm p-1">✕</button>
       </div>
       <div class="p-4 space-y-3 text-xs">
         <div class="bg-slate-950 border border-slate-800 rounded p-3 space-y-2">
-          <div class="flex justify-between">
-            <span class="text-slate-400">Service Worker 離線快取：</span>
-            <span id="sw-status-text" class="text-emerald-400 font-medium">檢查中...</span>
+          <div class="flex justify-between gap-2">
+            <span class="text-slate-400">Service Worker 快取：</span>
+            <span id="sw-status-text" class="text-emerald-400 font-medium text-right">檢查中...</span>
           </div>
-          <div class="flex justify-between">
-            <span class="text-slate-400">Manifest 應用程式清單：</span>
-            <span class="text-emerald-400 font-medium">已掛載 (manifest.webmanifest)</span>
+          <div class="flex justify-between gap-2">
+            <span class="text-slate-400">Manifest 清單：</span>
+            <span class="text-emerald-400 font-medium text-right">已掛載</span>
           </div>
-          <div class="flex justify-between">
-            <span class="text-slate-400">作業系統檔案關聯：</span>
-            <span class="text-sky-300 font-mono">.jt, .glb, .gltf, .stl, .obj</span>
+          <div class="flex justify-between gap-2">
+            <span class="text-slate-400">支援副檔名：</span>
+            <span class="text-sky-300 font-mono text-right">.jt, .glb, .gltf, .stl, .obj</span>
           </div>
         </div>
         <p class="text-slate-400 leading-relaxed">
-          將此網頁部署至 GitHub Pages 或任何 HTTPS 網站後，可點擊瀏覽器網址列右側的「安裝」圖示，將 <strong>JT2Go Web Viewer</strong> 安裝為獨立桌面與手機應用程式，支援完全離線開啟 3D 模型。
+          在 iPhone Safari 點擊下方「分享 → 加入主畫面」，或在 Android / 電腦 Chrome 點擊網址列右側「安裝」，即可將 <strong>JT2Go Web Viewer</strong> 安裝為全螢幕離線 App。
         </p>
-        <button id="btn-trigger-install" class="hidden w-full py-2 rounded bg-sky-600 hover:bg-sky-500 text-white font-semibold transition">
+        <button id="btn-trigger-install" class="hidden w-full py-2.5 rounded bg-sky-600 hover:bg-sky-500 text-white font-semibold transition">
           立即安裝為桌面 / 手機 App
         </button>
       </div>
