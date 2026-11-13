@@ -526,7 +526,7 @@ function rebuildEdgeLines() {
 function applyRenderMode(mode) {
   renderMode = mode;
   document.querySelectorAll('.render-btn').forEach((btn) => {
-    const isMobileBar = btn.closest('.xl\:hidden');
+    const isMobileBar = Boolean(btn.parentElement && btn.parentElement.classList.contains('xl:hidden'));
     if (btn.dataset.render === mode) {
       btn.className = isMobileBar
         ? 'render-btn px-2.5 py-1 text-[11px] rounded bg-sky-600 text-white font-medium whitespace-nowrap shrink-0'
