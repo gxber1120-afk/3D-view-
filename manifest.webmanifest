@@ -1,0 +1,31 @@
+{
+  "name": "JT2Go Web Viewer - 3D CAD & PMI 檢視器",
+  "short_name": "JT2Go Web",
+  "description": "支援 JT2Go、GLB、GLTF、STL、OBJ 的工業級 3D CAD 網頁檢視器與離線 PWA 應用",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1120",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "file_handlers": [
+    {
+      "action": "./index.html",
+      "accept": {
+        "model/gltf-binary": [".glb"],
+        "model/gltf+json": [".gltf"],
+        "model/stl": [".stl"],
+        "model/obj": [".obj"],
+        "application/octet-stream": [".jt"]
+      }
+    }
+  ]
+}
