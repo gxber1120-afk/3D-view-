@@ -5,7 +5,7 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 
 // ==========================================
-// 0. Toast 狀態通知輔助函式
+// 0. Toast 狀態通知與 OCCT STEP WASM 引擎懶載入
 // ==========================================
 let toastTimer = null;
 function showToast(message, type = 'info', duration = 3500) {
@@ -34,6 +34,33 @@ function showToast(message, type = 'info', duration = 3500) {
   }
 }
 
+let occtInstancePromise = null;
+function getOcctEngine() {
+  if (occtInstancePromise) return occtInstancePromise;
+  occtInstancePromise = new Promise((resolve, reject) => {
+    const cdnBase = 'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.22/dist/';
+    if (typeof window.occtimportjs === 'function') {
+      window.occtimportjs({ locateFile: (path) => cdnBase + path }).then(resolve).catch(reject);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = cdnBase + 'occt-import-js.js';
+    script.onload = () => {
+      if (typeof window.occtimportjs !== 'function') {
+        reject(new Error('OCCT STEP 解析引擎載入失敗'));
+        return;
+      }
+      window.occtimportjs({ locateFile: (path) => cdnBase + path }).then(resolve).catch(reject);
+    };
+    script.onerror = () => {
+      occtInstancePromise = null;
+      reject(new Error('無法下載 STEP 解析引擎（首次解析需連線載入 WASM 模組）'));
+    };
+    document.head.appendChild(script);
+  });
+  return occtInstancePromise;
+}
+
 // ==========================================
 // 1. PWA Service Worker 註冊與自動更新機制
 // ==========================================
@@ -51,7 +78,7 @@ if ('serviceWorker' in navigator) {
       });
       swRegistration = reg;
 
-      if (swStatusText) swStatusText.textContent = '已啟用 (自動更新就緒)';
+      if (swStatusText) swStatusText.textContent = '已啟用 (支援 STEP 離線快取)';
       reg.update();
 
       document.addEventListener('visibilitychange', () => {
@@ -187,10 +214,10 @@ controls.touches = {
   TWO: THREE.TOUCH.DOLLY_PAN
 };
 
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
 scene.add(ambientLight);
 
-const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.6);
+const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.5);
 dirLight1.position.set(8, 12, 10);
 scene.add(dirLight1);
 
@@ -221,7 +248,7 @@ let edgeLinesGroup = new THREE.Group();
 scene.add(edgeLinesGroup);
 
 // ==========================================
-// 4. 內建工業行星減速機組合件 (JT 範例)
+// 4. 內建工業行星減速機組合件 (範例)
 // ==========================================
 function buildDemoGearbox(customTitle = 'Planetary_Gearbox_Assembly.jt', shouldClear = true) {
   if (shouldClear) {
@@ -342,7 +369,7 @@ function finalizeSceneUpdate() {
 }
 
 // ==========================================
-// 5. 外部檔案匯入 (.GLB, .GLTF, .STL, .OBJ, .JT)
+// 5. 外部檔案匯入 (.STEP, .STP, .GLB, .GLTF, .STL, .OBJ, .JT)
 // ==========================================
 async function handleImportFiles(fileList, options) {
   if (!fileList || fileList.length === 0) return;
@@ -363,19 +390,95 @@ async function handleImportFiles(fileList, options) {
       labelNames.push(file.name);
 
       if (ext === 'jt') {
-        buildDemoGearbox(`${file.name} (JT 結構解析預覽)`, false);
+        buildDemoGearbox(`${file.name} (JT 結構預覽模式，真實幾何請匯入 .STEP / .GLB)`, false);
         loadedCount += 7;
         continue;
       }
 
-      if (!['stl', 'obj', 'glb', 'gltf'].includes(ext)) {
-        showToast(`不支援的檔案格式：.${ext}（支援 .jt, .glb, .gltf, .stl, .obj）`, 'error', 4500);
+      if (!['step', 'stp', 'stl', 'obj', 'glb', 'gltf'].includes(ext)) {
+        showToast(`不支援的檔案格式：.${ext}（支援 .step, .stp, .glb, .stl, .obj）`, 'error', 4500);
         continue;
       }
 
       const arrayBuffer = await file.arrayBuffer();
 
-      if (ext === 'stl') {
+      // A. STEP / STP (ISO 10303-21 B-Rep CAD 實體解析)
+      if (ext === 'step' || ext === 'stp') {
+        showToast(`正在啟動 STEP B-Rep 解析引擎處理 ${file.name}...`, 'info', 0);
+        const occt = await getOcctEngine();
+        const fileBuffer = new Uint8Array(arrayBuffer);
+        const result = occt.ReadStepFile(fileBuffer, null);
+
+        if (!result || !result.success || !result.meshes || result.meshes.length === 0) {
+          throw new Error('STEP 檔案解析失敗或未包含實體幾何（請確認匯出為 AP203 / AP214 實體）');
+        }
+
+        const stepGroup = new THREE.Group();
+        const tempParts = [];
+
+        result.meshes.forEach((meshData, idx) => {
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute('position', new THREE.Float32BufferAttribute(meshData.attributes.position.array, 3));
+          if (meshData.attributes.normal) {
+            geo.setAttribute('normal', new THREE.Float32BufferAttribute(meshData.attributes.normal.array, 3));
+          } else {
+            geo.computeVertexNormals();
+          }
+          if (meshData.index) {
+            geo.setIndex(new THREE.BufferAttribute(new Uint32Array(meshData.index.array), 1));
+          }
+
+          let colorHex = 0x94a3b8;
+          if (meshData.color && meshData.color.length >= 3) {
+            const c = new THREE.Color(meshData.color[0], meshData.color[1], meshData.color[2]);
+            colorHex = c.getHex();
+          }
+
+          const mat = new THREE.MeshStandardMaterial({
+            color: colorHex,
+            metalness: 0.55,
+            roughness: 0.35,
+            side: THREE.DoubleSide
+          });
+
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.scale.setScalar(unitScale);
+          stepGroup.add(mesh);
+          tempParts.push({
+            mesh,
+            name: (meshData.name && meshData.name.trim()) ? meshData.name.trim() : `${file.name}_Part_${idx + 1}`
+          });
+        });
+
+        stepGroup.updateMatrixWorld(true);
+        const groupBox = new THREE.Box3().setFromObject(stepGroup);
+        const groupCenter = groupBox.getCenter(new THREE.Vector3());
+
+        tempParts.forEach((item, idx) => {
+          const m = item.mesh;
+          stepGroup.remove(m);
+          if (autoCenter && !groupBox.isEmpty()) {
+            m.position.x -= groupCenter.x;
+            m.position.z -= groupCenter.z;
+            m.position.y -= groupBox.min.y;
+          }
+          const partBox = new THREE.Box3().setFromObject(m);
+          const partCenter = partBox.getCenter(new THREE.Vector3());
+          const explodeVec = partCenter.clone().sub(new THREE.Vector3(0, partCenter.y * 0.5, 0)).normalize();
+          if (explodeVec.lengthSq() < 0.01) explodeVec.set(0, 1, 0);
+
+          registerPart(
+            m,
+            item.name,
+            'STEP AP214 CAD 實體',
+            explodeVec.multiplyScalar(1.2),
+            idx === 0 ? [{ label: `STEP 組合件 (${file.name})`, offset: new THREE.Vector3(0, 0.5, 0) }] : []
+          );
+          loadedCount++;
+        });
+      }
+      // B. STL
+      else if (ext === 'stl') {
         const loader = new STLLoader();
         const geo = loader.parse(arrayBuffer);
         if (!geo || !geo.attributes || !geo.attributes.position || geo.attributes.position.count === 0) {
@@ -392,7 +495,9 @@ async function handleImportFiles(fileList, options) {
           { label: `STL (${file.name})`, offset: new THREE.Vector3(0, 0.5, 0) }
         ]);
         loadedCount++;
-      } else if (ext === 'obj') {
+      }
+      // C. OBJ
+      else if (ext === 'obj') {
         const text = new TextDecoder().decode(arrayBuffer);
         const loader = new OBJLoader();
         const objGroup = loader.parse(text);
@@ -422,7 +527,9 @@ async function handleImportFiles(fileList, options) {
             loadedCount++;
           }
         });
-      } else if (ext === 'glb' || ext === 'gltf') {
+      }
+      // D. GLB / GLTF
+      else if (ext === 'glb' || ext === 'gltf') {
         const loader = new GLTFLoader();
         await new Promise((resolve, reject) => {
           loader.parse(
@@ -465,7 +572,7 @@ async function handleImportFiles(fileList, options) {
               });
               resolve();
             },
-            (err) => reject(err || new Error('GLB/GLTF 解析失敗（若為 .gltf 請確認未缺少外部 .bin 檔案）'))
+            (err) => reject(err || new Error('GLB/GLTF 解析失敗'))
           );
         });
       }
